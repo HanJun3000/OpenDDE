@@ -157,6 +157,32 @@ def test_load_pdb_selects_requested_chain(tmp_path):
         load_custom_template_chain(str(bad))
 
 
+def test_load_pdb_with_truncated_records_and_models(tmp_path):
+    path = tmp_path / "opm.pdb"
+    _write_pdb(path, _backbone_atoms("ACDEF", "R"))
+    records = [
+        line for line in path.read_text().splitlines() if line.startswith("ATOM")
+    ]
+    # OPM membrane pseudo-atoms end after the z coordinate.
+    dummy = "HETATM 8156  N   DUM     2     -46.000 -10.000 -15.700"
+    second_model = [line[:22] + " 999" + line[26:] for line in records]
+    path.write_text(
+        "\n".join(
+            ["REMARK      1/2 of bilayer thickness:   15.7", "MODEL        1"]
+            + records
+            + [dummy, "ENDMDL", "MODEL        2"]
+            + second_model
+            + ["ENDMDL", "END"]
+        )
+        + "\n"
+    )
+
+    chain = load_custom_template_chain(str(path), "R")
+
+    assert chain.sequence == "ACDEF"
+    assert chain.atom_mask[:, ATOM37_ORDER["CA"]].sum() == 5
+
+
 def test_map_query_to_template_without_kalign(monkeypatch):
     def fail_align(*args, **kwargs):
         raise AssertionError("Kalign should not be needed")

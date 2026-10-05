@@ -19,7 +19,6 @@ import os
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 import biotite.structure.info as struc_info
-import biotite.structure.io.pdb as pdb
 import biotite.structure.io.pdbx as pdbx
 import numpy as np
 
@@ -106,17 +105,35 @@ def _read_cif_atoms(text: str) -> Dict[str, np.ndarray]:
 
 
 def _read_pdb_atoms(text: str) -> Dict[str, np.ndarray]:
-    atom_array = pdb.PDBFile.read(io.StringIO(text)).get_structure(
-        model=1, altloc="first"
-    )
-    return {
-        "chain_id": atom_array.chain_id,
-        "res_id": atom_array.res_id.astype(str),
-        "ins_code": atom_array.ins_code,
-        "res_name": atom_array.res_name,
-        "atom_name": atom_array.atom_name,
-        "coord": atom_array.coord.astype(np.float32),
+    """Read ATOM/HETATM records of the first model by fixed PDB columns.
+
+    Only the columns up to the coordinates are required, so truncated records
+    (e.g. OPM membrane pseudo-atoms without occupancy/B-factor) are accepted.
+    """
+    columns: Dict[str, list] = {
+        "chain_id": [],
+        "res_id": [],
+        "ins_code": [],
+        "res_name": [],
+        "atom_name": [],
+        "coord": [],
     }
+    for line in text.splitlines():
+        if line.startswith("ENDMDL"):
+            break
+        if not line.startswith(("ATOM  ", "HETATM")) or len(line) < 54:
+            continue
+        columns["atom_name"].append(line[12:16].strip())
+        columns["res_name"].append(line[17:20].strip())
+        columns["chain_id"].append(line[21].strip())
+        columns["res_id"].append(line[22:26].strip())
+        columns["ins_code"].append(line[26].strip())
+        columns["coord"].append(
+            [float(line[30:38]), float(line[38:46]), float(line[46:54])]
+        )
+    atoms = {key: np.array(value) for key, value in columns.items()}
+    atoms["coord"] = atoms["coord"].astype(np.float32).reshape(-1, 3)
+    return atoms
 
 
 @functools.lru_cache(maxsize=1)

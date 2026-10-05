@@ -253,6 +253,7 @@ class InferenceDataset(Dataset):
             atom_array=atom_array,
             use_template=self.use_template,
             online_template_featurizer=self.online_template_featurizer,
+            kalign_binary_path=self.configs.data.template.kalign_binary_path,
         )
         # Make dummy features for not implemented features
         dummy_feats = []

@@ -87,6 +87,10 @@ Output: `hmmsearch.a3m`, referenced by `templatesPath`. During prediction,
 `--use_template true` may also call `kalign` and may need template mmCIF files
 from cache or remote PDBe fetch.
 
+To use your own structures instead of searched hits, add `templates` to the
+protein chain; such chains are not searched. See
+[custom structure templates](infer_json_format.md#custom-structure-templates).
+
 ## RNA MSA
 
 RNA MSA uses HMMER (`nhmmer`, `hmmalign`, `hmmbuild`) against NT-RNA, Rfam, and

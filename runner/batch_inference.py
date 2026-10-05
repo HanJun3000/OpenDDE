@@ -785,7 +785,7 @@ def inference_jsons(
     "--use_template",
     type=bool,
     default=False,
-    help="Use templates (requires templatesPath in input JSON).",
+    help="Use templates (templatesPath and/or templates in input JSON).",
 )
 @click.option(
     "--use_rna_msa",

@@ -13,6 +13,7 @@ from opendde.data.constants import (
     RNA_CHAIN,
 )
 from opendde.data.msa.msa_utils import map_to_standard
+from opendde.data.template.custom_template import make_custom_template_features
 from opendde.data.template.template_parser import HHRParser, HmmsearchA3MParser
 from opendde.data.template.template_utils import (
     TEMPLATE_FEATURES,
@@ -246,6 +247,7 @@ class InferenceTemplateFeaturizer:
         atom_array: AtomArray,
         use_template: bool = True,
         online_template_featurizer: Optional[TemplateHitFeaturizer] = None,
+        kalign_binary_path: Optional[str] = None,
     ) -> Dict[str, np.ndarray]:
         """
         Generates template features during inference.
@@ -255,6 +257,9 @@ class InferenceTemplateFeaturizer:
             atom_array: Parsed atom structure.
             use_template: Whether to use templates.
             online_template_featurizer: Featurizer for processing template hits.
+            kalign_binary_path: Kalign binary used to align custom templates
+                whose sequence is neither identical to nor a substring of the
+                query (and no explicit indices are given).
 
         Returns:
             Dictionary of template features.
@@ -268,6 +273,7 @@ class InferenceTemplateFeaturizer:
 
         for eid, info in enumerate(bioassembly):
             seq, count, ctype, t_path = "", 0, LIGAND_CHAIN_TYPES, ""
+            custom_templates = []
 
             if "proteinChain" in info:
                 c = info["proteinChain"]
@@ -277,6 +283,7 @@ class InferenceTemplateFeaturizer:
                     PROTEIN_CHAIN,
                     c.get("templatesPath", ""),
                 )
+                custom_templates = c.get("templates") or []
             elif "rnaSequence" in info:
                 c = info["rnaSequence"]
                 seq, count, ctype = c["sequence"], c["count"], RNA_CHAIN
@@ -290,6 +297,21 @@ class InferenceTemplateFeaturizer:
                 count, ctype = info["ion"]["count"], LIGAND_CHAIN_TYPES
 
             templates = []
+            if custom_templates and not use_template:
+                logger.warning(
+                    f"Ignoring {len(custom_templates)} custom template(s) for "
+                    f"entity {eid + 1} because use_template is false."
+                )
+            elif custom_templates:
+                # User-supplied structures take the first template slots.
+                templates.extend(
+                    make_custom_template_features(
+                        query_seq=seq,
+                        spec=spec,
+                        kalign_binary_path=kalign_binary_path,
+                    )
+                    for spec in custom_templates
+                )
             if t_path and use_template and online_template_featurizer:
                 assert ctype == PROTEIN_CHAIN, "Only protein templates are supported."
                 with open(t_path, "r") as f:
@@ -310,8 +332,10 @@ class InferenceTemplateFeaturizer:
                     hits=hits,
                     max_template_date=None,
                 )
-                templates = result.features
-                logger.info(f"Found {len(templates)} templates for sequence {seq}")
+                templates.extend(result.features)
+                logger.info(
+                    f"Found {len(result.features)} templates for sequence {seq}"
+                )
 
             for i in range(count):
                 aid = curr_asym_id + i

@@ -172,7 +172,8 @@ def update_template_info(
 ) -> bool:
     """
     Update template information in the JSON data.
-    If templatesPath is missing, it performs a template search.
+    If templatesPath is missing, it performs a template search. Protein chains
+    with user-supplied structure templates (``templates``) are not searched.
 
     Args:
         json_data (list[dict[str, Any]]): The input JSON data.
@@ -193,6 +194,9 @@ def update_template_info(
                 if "templatesPath" in protein_chain and os.path.exists(
                     protein_chain["templatesPath"]
                 ):
+                    continue
+                # User-supplied structure templates replace the search.
+                if protein_chain.get("templates"):
                     continue
 
                 # Get MSA path to perform template search

@@ -62,6 +62,59 @@ match `count`.
 - `pairedMsaPath`, `unpairedMsaPath`: optional protein A3M files.
 - `templatesPath`: optional template hits file (`.a3m` or `.hhr`), used only with
   `--use_template true`.
+- `templates`: optional list of up to 4 user-supplied template structures, used
+  only with `--use_template true`. See [Custom structure templates](#custom-structure-templates).
+
+### Custom structure templates
+
+Use `templates` to guide a protein chain with your own structure, such as a
+truncation, an edited structure, a de novo design, or a predicted model. No PDB
+ID, release date, or SEQRES records are needed.
+
+```json
+{
+  "proteinChain": {
+    "sequence": "MKTAYIAKQRQISFVKSHFSRQ",
+    "count": 1,
+    "templates": [
+      {"structurePath": "/absolute/path/to/design.cif", "chainId": "A"},
+      {
+        "structurePath": "/absolute/path/to/domain.pdb",
+        "chainId": "B",
+        "queryIndices": [0, 1, 2, 3],
+        "templateIndices": [10, 11, 12, 13]
+      }
+    ]
+  }
+}
+```
+
+| Field | Required | Meaning |
+| --- | :---: | --- |
+| `structurePath` | Yes | `.cif`, `.mmcif`, `.pdb`, or `.ent` file, optionally gzipped (`.gz`). |
+| `chainId` | No | Author chain ID. Required when the file has more than one protein chain. |
+| `queryIndices` | No | 0-based residue indices into `sequence`. Must be given together with `templateIndices`. |
+| `templateIndices` | No | 0-based indices into the template chain's residues, in file order. Same length as `queryIndices`. |
+
+Behavior:
+
+- Only the first model and the first alternate location are read. Water,
+  ligands, and other non-amino-acid residues are ignored; the template sequence
+  is the chain's amino-acid residues in file order.
+- Without explicit indices, an identical template sequence, or a template that
+  occurs exactly once as a substring of the query (or vice versa), is mapped
+  directly. Other sequences are aligned with `kalign`; give explicit indices
+  when the sequences are too dissimilar to align reliably.
+- Query residues without a mapped template residue are treated as having no
+  template.
+- Custom templates fill the first template slots. Hits from `templatesPath`, if
+  given, fill the remaining slots up to 4 in total.
+- Protein chains with `templates` are skipped by the automatic template search
+  (`opendde mt`, `opendde prep`, and `opendde pred --use_template true`).
+  Chains without `templates` are searched as before.
+- With multiple copies (`count > 1`), every copy uses the same templates.
+- As with search hits, templates only inform residue pairs within the same
+  chain; they do not constrain the relative placement of chains.
 
 ## `dnaSequence`
 

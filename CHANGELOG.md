@@ -4,7 +4,13 @@ User-facing changes to OpenDDE are documented here.
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- Added custom structure templates through `proteinChain.templates`. Local PDB
+  or mmCIF files, including truncations, de novo designs, and predicted models
+  without SEQRES or release-date records, can guide a protein chain when
+  `--use_template true` is set. Chains with custom templates skip the automatic
+  template search.
 
 ## [1.1.1] - 2026-09-02
 

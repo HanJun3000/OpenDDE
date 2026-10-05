@@ -7,6 +7,10 @@ from __future__ import annotations
 from typing import Any
 
 _MAX_NUMPY_SEED = 2**32 - 1
+MAX_CUSTOM_TEMPLATES = 4
+CUSTOM_TEMPLATE_KEYS = frozenset(
+    {"structurePath", "chainId", "queryIndices", "templateIndices"}
+)
 
 
 def validate_inference_seed(value: Any, *, location: str = "seed") -> int:
@@ -84,5 +88,85 @@ def validate_inference_jobs(value: Any) -> list[dict[str, Any]]:
                     raise ValueError(
                         f"modelSeeds for job {name!r} contains invalid seed {seed!r}."
                     ) from exc
+        _validate_custom_templates(job, name)
         jobs.append(job)
     return jobs
+
+
+def _validate_custom_templates(job: dict[str, Any], name: str) -> None:
+    """Validate user-supplied structure templates before any heavy work runs."""
+
+    sequences = job.get("sequences")
+    if not isinstance(sequences, list):
+        return
+    for index, entity in enumerate(sequences):
+        if not isinstance(entity, dict):
+            continue
+        for entity_type, body in entity.items():
+            if not isinstance(body, dict) or "templates" not in body:
+                continue
+            location = f"sequences[{index}].{entity_type}.templates for job {name!r}"
+            if entity_type != "proteinChain":
+                raise ValueError(
+                    f"{location}: templates are only supported for proteinChain."
+                )
+            validate_custom_templates(body["templates"], location=location)
+
+
+def _is_non_negative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def validate_custom_templates(value: Any, *, location: str) -> None:
+    """Validate the JSON shape of a ``proteinChain.templates`` entry."""
+
+    if not isinstance(value, list):
+        raise ValueError(f"{location} must be a list of template objects.")
+    if len(value) > MAX_CUSTOM_TEMPLATES:
+        raise ValueError(
+            f"{location} has {len(value)} templates; at most "
+            f"{MAX_CUSTOM_TEMPLATES} are supported."
+        )
+    for index, spec in enumerate(value):
+        spec_location = f"{location}[{index}]"
+        if not isinstance(spec, dict):
+            raise ValueError(f"{spec_location} must be an object.")
+        unknown = sorted(set(spec) - CUSTOM_TEMPLATE_KEYS)
+        if unknown:
+            raise ValueError(
+                f"{spec_location} has unsupported field(s) {unknown}; allowed "
+                f"fields are {sorted(CUSTOM_TEMPLATE_KEYS)}."
+            )
+        path = spec.get("structurePath")
+        if not isinstance(path, str) or not path:
+            raise ValueError(f"{spec_location}.structurePath must be a non-empty path.")
+        chain_id = spec.get("chainId")
+        if chain_id is not None and (not isinstance(chain_id, str) or not chain_id):
+            raise ValueError(f"{spec_location}.chainId must be a non-empty string.")
+
+        query_indices = spec.get("queryIndices")
+        template_indices = spec.get("templateIndices")
+        if (query_indices is None) != (template_indices is None):
+            raise ValueError(
+                f"{spec_location} must give both queryIndices and templateIndices, "
+                "or neither."
+            )
+        if query_indices is None:
+            continue
+        for key, indices in (
+            ("queryIndices", query_indices),
+            ("templateIndices", template_indices),
+        ):
+            if not isinstance(indices, list) or not indices:
+                raise ValueError(f"{spec_location}.{key} must be a non-empty list.")
+            if not all(_is_non_negative_int(i) for i in indices):
+                raise ValueError(
+                    f"{spec_location}.{key} must contain non-negative integers."
+                )
+            if len(set(indices)) != len(indices):
+                raise ValueError(f"{spec_location}.{key} must not repeat indices.")
+        if len(query_indices) != len(template_indices):
+            raise ValueError(
+                f"{spec_location}.queryIndices and templateIndices must have the "
+                "same length."
+            )

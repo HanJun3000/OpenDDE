@@ -292,18 +292,94 @@ with `--use_template true`:
 opendde pred -i input.json -o ./output --use_template true
 ```
 
-- Accepts `.cif`, `.mmcif`, `.pdb`, and `.ent` files, optionally gzipped.
-- The template is mapped onto the query sequence automatically (identical
-  sequence, unique substring, or `kalign` alignment). Use 0-based
-  `queryIndices` and `templateIndices` for explicit mapping.
-- Several templates can cover different parts of one chain, for example the
-  two moieties of a fusion protein.
-- Chains with `templates` skip the automatic template search. `kalign` must be
-  installed.
+### Template fields
+
+Each entry in `proteinChain.templates` accepts:
+
+| Field | Required | Meaning |
+| --- | :---: | --- |
+| `structurePath` | Yes | `.cif`, `.mmcif`, `.pdb`, or `.ent` file, optionally gzipped (`.gz`). Use absolute paths; relative paths resolve against the working directory. |
+| `chainId` | No | Author chain ID. Required when the file has more than one protein chain. |
+| `queryIndices` | No | 0-based residue indices into `sequence`. Must be given together with `templateIndices`. |
+| `templateIndices` | No | 0-based indices into the template chain's amino-acid residues in file order (not residue numbers). Same length as `queryIndices`. |
+
+Only the first model and first alternate location are read; water, ligands,
+and other non-amino-acid residues are ignored.
+
+### Related CLI flags
+
+The fork adds no new CLI flags. These existing `opendde pred` flags control
+custom templates:
+
+| Flag | Default | Effect on custom templates |
+| --- | --- | --- |
+| `--use_template` | `false` | Must be `true`. Otherwise `templates` are ignored with a warning. |
+| `--kalign_binary_path` | `kalign` on `PATH` | Kalign aligns templates whose sequence is not identical to, or a unique substring of, the query. With `--use_template true` it must be found at startup. |
+| `--use_msa` | `true` | Independent of templates. Without MSA paths in the JSON, `true` queries the public ColabFold server; use `false` for single-sequence runs. |
+| `--hmmsearch_binary_path`, `--hmmbuild_binary_path`, `--seqres_database_path` | `PATH` / `$OPENDDE_ROOT_DIR` | Only needed for chains without `templates` or `templatesPath`, which are still searched against the PDB. Chains with `templates` skip the search. |
+
+`opendde mt` and `opendde prep` likewise skip chains that have `templates`.
+
+### Usage
+
+Truncation or domain: give the file. A template that occurs exactly once in
+the query (or contains it) is placed automatically:
+
+```json
+"templates": [{"structurePath": "/data/receptor_40-200.cif", "chainId": "R"}]
+```
+
+Mutants and homologs are aligned with Kalign. When the sequences differ too
+much, or the numbering is unrelated, map residues explicitly:
+
+```json
+"templates": [{
+  "structurePath": "/data/design.pdb",
+  "chainId": "B",
+  "queryIndices": [4, 5, 6, 7, 8],
+  "templateIndices": [0, 1, 2, 3, 4]
+}]
+```
+
+Several parts of one chain, for example a GPCR–bRIL fusion protein:
+
+```json
+"templates": [
+  {"structurePath": "/data/gpcr.cif", "chainId": "R"},
+  {"structurePath": "/data/bril.pdb", "chainId": "A"}
+]
+```
+
+Each template guides only the residues it covers. To also guide the
+orientation between the parts, add a template that contains the whole fusion.
+
+Combined with searched templates: custom templates take the first slots, and
+hits from `templatesPath` fill the rest, up to 4 in total.
+
+Complexes: give each `proteinChain` its own `templates`, for example the same
+complex file with different `chainId`s. All copies of an entity with
+`count > 1` share its templates; to template copies differently, list them as
+separate entities with `count: 1`.
+
+Check the mapping in the log for every template:
+
+```text
+Custom template /data/design.cif (chain A): 152/279 query residues mapped, 152 identical.
+```
+
+Query residues without a mapped template residue get no template signal. If
+the mapped or identical count is lower than expected, give explicit indices.
+
+### Limitations
+
 - Templates guide residue pairs within a chain only; they do not constrain how
   separate chains are placed relative to each other.
+- With a deep MSA, a template may add little; compare runs with and without
+  `--use_msa`.
 
-Install this fork from source:
+### Install this fork
+
+From source:
 
 ```bash
 git clone -b templating https://github.com/HanJun3000/OpenDDE.git
@@ -319,8 +395,8 @@ uv pip install --torch-backend cu126 \
   "opendde[gpu] @ git+https://github.com/HanJun3000/OpenDDE.git@templating"
 ```
 
-Check that `opendde --version` reports `1.1.1+templating`. Field reference and
-mapping rules: [custom structure templates](https://github.com/HanJun3000/OpenDDE/blob/templating/docs/infer_json_format.md#custom-structure-templates).
+Check that `opendde --version` reports `1.1.1+templating`. Full reference:
+[custom structure templates](https://github.com/HanJun3000/OpenDDE/blob/templating/docs/infer_json_format.md#custom-structure-templates).
 
 ## CLI Overview
 

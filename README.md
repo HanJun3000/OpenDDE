@@ -15,6 +15,14 @@ OpenDDE is an open-source, all-atom biomolecular foundation model that turns co-
 > be reproducible across releases. It is not yet intended for production
 > pipelines. Please open an issue for bugs, regressions, or feature requests.
 
+> [!NOTE]
+> This is the `templating` branch of the
+> [HanJun3000/OpenDDE](https://github.com/HanJun3000/OpenDDE/tree/templating) fork
+> (version `1.1.1+templating`). It adds
+> [custom structure templates](#custom-structure-templates-fork); everything else
+> follows upstream OpenDDE 1.1.1. Please report fork-specific issues to the fork,
+> not to upstream.
+
 ![OpenDDE banner](https://raw.githubusercontent.com/aurekaresearch/OpenDDE/main/assets/scaling_law.png)
 ![results](https://raw.githubusercontent.com/aurekaresearch/OpenDDE/main/assets/results.png)
 
@@ -260,6 +268,59 @@ links are needed.
 
 See the [input JSON format](https://github.com/aurekaresearch/OpenDDE/blob/main/docs/infer_json_format.md) for the full schema,
 including covalent bonds, ligands, modifications, MSA paths, and template paths.
+
+## Custom Structure Templates (fork)
+
+Any local protein structure can guide a protein chain: truncations, edited or
+de novo designed structures, and predicted models. No PDB ID, release date, or
+SEQRES records are needed. Add up to 4 `templates` per `proteinChain` and run
+with `--use_template true`:
+
+```json
+{
+  "proteinChain": {
+    "sequence": "MKTAYIAKQRQISFVKSHFSRQ",
+    "count": 1,
+    "templates": [
+      {"structurePath": "/absolute/path/to/design.cif", "chainId": "A"}
+    ]
+  }
+}
+```
+
+```bash
+opendde pred -i input.json -o ./output --use_template true
+```
+
+- Accepts `.cif`, `.mmcif`, `.pdb`, and `.ent` files, optionally gzipped.
+- The template is mapped onto the query sequence automatically (identical
+  sequence, unique substring, or `kalign` alignment). Use 0-based
+  `queryIndices` and `templateIndices` for explicit mapping.
+- Several templates can cover different parts of one chain, for example the
+  two moieties of a fusion protein.
+- Chains with `templates` skip the automatic template search. `kalign` must be
+  installed.
+- Templates guide residue pairs within a chain only; they do not constrain how
+  separate chains are placed relative to each other.
+
+Install this fork from source:
+
+```bash
+git clone -b templating https://github.com/HanJun3000/OpenDDE.git
+cd OpenDDE
+uv venv --python 3.11
+uv pip install --python .venv --torch-backend cu126 -e ".[gpu]"
+```
+
+Or directly with pip/uv:
+
+```bash
+uv pip install --torch-backend cu126 \
+  "opendde[gpu] @ git+https://github.com/HanJun3000/OpenDDE.git@templating"
+```
+
+Check that `opendde --version` reports `1.1.1+templating`. Field reference and
+mapping rules: [custom structure templates](https://github.com/HanJun3000/OpenDDE/blob/templating/docs/infer_json_format.md#custom-structure-templates).
 
 ## CLI Overview
 

@@ -6,10 +6,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from opendde import __version__
 from opendde.config.model_manifest import load_model_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Fork builds carry a local version label (e.g. 1.1.1+templating) and are not
+# published through the upstream release process checked below.
+requires_release_version = pytest.mark.skipif(
+    "+" in __version__,
+    reason="release metadata checks apply to upstream X.Y.Z releases only",
+)
 
 
 def load_repository_script(module_name: str):
@@ -38,6 +47,7 @@ def test_source_distribution_excludes_repository_tests():
     assert "exclude MANIFEST.in" in manifest
 
 
+@requires_release_version
 def test_current_changelog_renders_the_github_release_body():
     result = subprocess.run(
         [
@@ -122,6 +132,7 @@ def test_existing_long_form_release_document_is_validated(monkeypatch, tmp_path)
     assert "long-form release notes exist but are not linked from CHANGELOG" in errors
 
 
+@requires_release_version
 def test_release_validator_accepts_current_version():
     result = subprocess.run(
         [

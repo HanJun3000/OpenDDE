@@ -35,6 +35,7 @@ Job fields:
 | `sequences` | Yes | List of entities. Each item has exactly one entity key. |
 | `modelSeeds` | No | Default seeds for the job. Overridden by `--seeds`; if neither is set, a random seed is sampled. |
 | `covalent_bonds` | No | Explicit covalent links between entities. |
+| `scoreStructure` | No | Score a given structure instead of predicting one. See [Scoring a given structure](#scoring-a-given-structure). |
 
 Every entity has `count`. Optional `id` is a list of chain IDs; its length must
 match `count`.
@@ -214,6 +215,57 @@ Fields:
 
 Use `entity1`/`entity2` for new inputs. The old `left_entity`/`right_entity`
 style is accepted for compatibility.
+
+## Scoring a given structure
+
+Add `scoreStructure` to a job to get OpenDDE's confidence metrics for your own
+coordinates, for example a designed complex or an experimental structure. The
+trunk runs as usual on the sequences, MSA, and templates of the job, but the
+confidence head sees the coordinates from the file instead of a diffusion
+sample.
+
+```json
+[
+  {
+    "name": "score_dimer",
+    "modelSeeds": [101],
+    "sequences": [
+      {"proteinChain": {"sequence": "SEQ_OF_CHAIN_A", "count": 1}},
+      {"proteinChain": {"sequence": "SEQ_OF_CHAIN_B", "count": 1}}
+    ],
+    "scoreStructure": {
+      "structurePath": "/absolute/path/to/dimer.cif",
+      "chainIds": ["A", "B"]
+    }
+  }
+]
+```
+
+| Field | Required | Meaning |
+| --- | :---: | --- |
+| `structurePath` | Yes | `.cif`, `.mmcif`, `.pdb`, or `.ent` file, optionally gzipped (`.gz`). |
+| `chainIds` | No | Author chain IDs in the file, one per model chain, in model chain order (entities in JSON order, then copies). Defaults to the file's protein chains in file order. |
+
+Behavior:
+
+- Only protein chains are supported; jobs with other entities are rejected.
+- Residues are mapped to each model chain like custom templates: identical
+  sequence, unique substring, or `kalign` alignment. Mapped residues of the
+  same type contribute all atoms; residues of a different type contribute
+  backbone atoms (`N`, `CA`, `C`, `O`) only. The log reports mapped residues
+  and atoms per chain.
+- If the file contains every model atom, diffusion is skipped. Otherwise a
+  diffusion sample is superposed onto the given atoms and supplies only the
+  missing ones (for example `OXT` or unresolved side chains).
+- Outputs use the normal layout. The structure file holds the given
+  coordinates (plus any filled atoms) with pLDDT as B-factors, and the
+  summary JSON holds `plddt`, `ptm`, `iptm`, `chain_pair_iptm`, `has_clash`,
+  and `ranking_score` for them.
+- Use `--sample 1`: with full coverage every sample is identical, and with
+  partial coverage samples differ only in the filled atoms.
+- Scores depend on the job's inputs. Compare structures scored with the same
+  MSA, template, and seed settings.
+- Fold-CP distributed inference is not supported.
 
 ## Unsupported `constraint`
 

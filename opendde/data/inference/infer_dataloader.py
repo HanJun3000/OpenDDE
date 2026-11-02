@@ -16,6 +16,11 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 from opendde.data.core import ccd
 from opendde.data.inference.input_validation import validate_inference_jobs
 from opendde.data.inference.json_to_feature import SampleDictToFeatures
+from opendde.data.inference.score_structure import (
+    SCORE_COORDINATE_KEY,
+    SCORE_COORDINATE_MASK_KEY,
+    build_score_coordinates,
+)
 from opendde.data.msa.msa_featurizer import InferenceMSAFeaturizer
 from opendde.data.template.template_featurizer import InferenceTemplateFeaturizer
 from opendde.data.template.template_utils import TemplateHitFeaturizer
@@ -274,6 +279,14 @@ class InferenceDataset(Dataset):
 
         # Transform to right data type
         feat = data_type_transform(feat_or_label_dict=features_dict)
+        if "scoreStructure" in single_sample_dict:
+            score_coordinate, score_mask = build_score_coordinates(
+                single_sample_dict,
+                atom_array,
+                kalign_binary_path=self.configs.data.template.kalign_binary_path,
+            )
+            feat[SCORE_COORDINATE_KEY] = torch.from_numpy(score_coordinate)
+            feat[SCORE_COORDINATE_MASK_KEY] = torch.from_numpy(score_mask)
 
         t2 = time.time()
 

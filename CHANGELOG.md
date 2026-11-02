@@ -11,6 +11,11 @@ User-facing changes to OpenDDE are documented here.
   without SEQRES or release-date records, can guide a protein chain when
   `--use_template true` is set. Chains with custom templates skip the automatic
   template search.
+- Added structure scoring through a job-level `scoreStructure` field. OpenDDE
+  computes its confidence metrics (pLDDT, PAE-derived pTM/ipTM, clash flag,
+  ranking score) for coordinates from a local protein PDB or mmCIF file
+  instead of a diffusion sample; atoms missing from the file are filled from a
+  superposed diffusion sample.
 
 ## [1.1.1] - 2026-09-02
 

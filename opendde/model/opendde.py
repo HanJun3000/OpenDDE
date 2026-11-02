@@ -12,6 +12,11 @@ import torch.distributed as dist
 import torch.nn as nn
 
 from opendde.config.schema import OpenDDEConfig
+from opendde.data.inference.score_structure import (
+    SCORE_COORDINATE_KEY,
+    SCORE_COORDINATE_MASK_KEY,
+    overlay_score_coordinates,
+)
 from opendde.data.tokenizer import STRUCTURAL_TOKEN_ROLES
 from opendde.distributed.foldcp.config import FoldCPConfig
 from opendde.distributed.foldcp.comm import (
@@ -1865,6 +1870,23 @@ class OpenDDE(nn.Module):
         log_dict = {}
         pred_dict = {}
         time_tracker = {}
+        # Scoring mode (scoreStructure): the given coordinates bypass the trunk
+        # and replace the diffusion sample that the confidence head sees.
+        score_coordinate = input_feature_dict.get(SCORE_COORDINATE_KEY)
+        score_mask = input_feature_dict.get(SCORE_COORDINATE_MASK_KEY)
+        skip_diffusion = False
+        if score_coordinate is not None:
+            if self._maybe_foldcp_mesh() is not None:
+                raise NotImplementedError(
+                    "scoreStructure is not supported with Fold-CP distributed inference."
+                )
+            input_feature_dict = {
+                key: value
+                for key, value in input_feature_dict.items()
+                if key not in (SCORE_COORDINATE_KEY, SCORE_COORDINATE_MASK_KEY)
+            }
+            # Every model atom is given, so no diffusion sample is needed.
+            skip_diffusion = bool(score_mask.all())
         with self._foldcp_stage_context("opendde_pairformer_trunk", N_token):
             s_inputs, s, z = self.get_pairformer_output(
                 input_feature_dict=input_feature_dict,
@@ -1981,33 +2003,45 @@ class OpenDDE(nn.Module):
         )
         if noise_schedule is None:  # pragma: no cover
             raise RuntimeError("Fold-CP inference noise schedule was not prepared.")
-        with self._foldcp_stage_context("opendde_diffusion_cache", N_token):
-            cache = self.prepare_diffusion_cache_for_sampling(
-                input_feature_dict=input_feature_dict,
-                z=z,
-                foldcp_mesh=foldcp_mesh,
-                diffusion_z_spec=diffusion_z_spec,
-            )
+        if skip_diffusion:
+            cache = None
+        else:
+            with self._foldcp_stage_context("opendde_diffusion_cache", N_token):
+                cache = self.prepare_diffusion_cache_for_sampling(
+                    input_feature_dict=input_feature_dict,
+                    z=z,
+                    foldcp_mesh=foldcp_mesh,
+                    diffusion_z_spec=diffusion_z_spec,
+                )
         if foldcp_mesh is not None and s_inputs.is_cuda:
             self._run_foldcp_local_action_synchronized(
                 foldcp_mesh,
                 torch.cuda.empty_cache,
                 description="Fold-CP post-cache allocator cleanup",
             )
-        with self._foldcp_stage_context("opendde_sample_diffusion", N_token):
-            self.run_sample_diffusion_stage(
-                pred_dict=pred_dict,
-                input_feature_dict=input_feature_dict,
-                s_inputs=s_inputs,
-                s=s,
-                z=z,
-                pair_z_spec=pair_z_spec,
-                cache=cache,
-                N_sample=N_sample,
-                noise_schedule=noise_schedule,
-                chunk_size=chunk_size,
-                inplace_safe=inplace_safe,
+        if skip_diffusion:
+            pred_dict["coordinate"] = (
+                score_coordinate.float().unsqueeze(0).expand(N_sample, -1, -1).clone()
             )
+        else:
+            with self._foldcp_stage_context("opendde_sample_diffusion", N_token):
+                self.run_sample_diffusion_stage(
+                    pred_dict=pred_dict,
+                    input_feature_dict=input_feature_dict,
+                    s_inputs=s_inputs,
+                    s=s,
+                    z=z,
+                    pair_z_spec=pair_z_spec,
+                    cache=cache,
+                    N_sample=N_sample,
+                    noise_schedule=noise_schedule,
+                    chunk_size=chunk_size,
+                    inplace_safe=inplace_safe,
+                )
+            if score_coordinate is not None:
+                pred_dict["coordinate"] = overlay_score_coordinates(
+                    pred_dict["coordinate"], score_coordinate, score_mask
+                )
 
         del cache
         if foldcp_mesh is not None and s_inputs.is_cuda:

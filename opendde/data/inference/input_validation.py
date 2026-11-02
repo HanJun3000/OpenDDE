@@ -11,6 +11,7 @@ MAX_CUSTOM_TEMPLATES = 4
 CUSTOM_TEMPLATE_KEYS = frozenset(
     {"structurePath", "chainId", "queryIndices", "templateIndices"}
 )
+SCORE_STRUCTURE_KEYS = frozenset({"structurePath", "chainIds"})
 
 
 def validate_inference_seed(value: Any, *, location: str = "seed") -> int:
@@ -89,8 +90,59 @@ def validate_inference_jobs(value: Any) -> list[dict[str, Any]]:
                         f"modelSeeds for job {name!r} contains invalid seed {seed!r}."
                     ) from exc
         _validate_custom_templates(job, name)
+        if "scoreStructure" in job:
+            validate_score_structure(job, location=f"scoreStructure for job {name!r}")
         jobs.append(job)
     return jobs
+
+
+def validate_score_structure(job: dict[str, Any], *, location: str) -> None:
+    """Validate a job-level ``scoreStructure`` entry (protein chains only)."""
+
+    spec = job["scoreStructure"]
+    if not isinstance(spec, dict):
+        raise ValueError(f"{location} must be an object.")
+    unknown = set(spec) - SCORE_STRUCTURE_KEYS
+    if unknown:
+        raise ValueError(
+            f"{location} has unknown keys {sorted(unknown)}; "
+            f"allowed keys are {sorted(SCORE_STRUCTURE_KEYS)}."
+        )
+    path = spec.get("structurePath")
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError(f"{location}.structurePath must be a non-empty path.")
+    chain_ids = spec.get("chainIds")
+    if chain_ids is not None:
+        if (
+            not isinstance(chain_ids, list)
+            or not chain_ids
+            or not all(isinstance(c, str) and c for c in chain_ids)
+        ):
+            raise ValueError(
+                f"{location}.chainIds must be a non-empty list of strings."
+            )
+        if len(set(chain_ids)) != len(chain_ids):
+            raise ValueError(f"{location}.chainIds must not repeat chains.")
+    sequences = job.get("sequences")
+    if not isinstance(sequences, list):
+        return
+    n_chains = 0
+    for index, entity in enumerate(sequences):
+        if not isinstance(entity, dict):
+            continue
+        for entity_type, body in entity.items():
+            if entity_type != "proteinChain":
+                raise ValueError(
+                    f"{location}: only proteinChain entities can be scored; "
+                    f"sequences[{index}] is {entity_type}."
+                )
+            if isinstance(body, dict) and _is_non_negative_int(body.get("count")):
+                n_chains += body["count"]
+    if chain_ids is not None and n_chains and len(chain_ids) != n_chains:
+        raise ValueError(
+            f"{location}.chainIds has {len(chain_ids)} entries for {n_chains} model "
+            "chain(s); give one file chain per model chain, in model chain order."
+        )
 
 
 def _validate_custom_templates(job: dict[str, Any], name: str) -> None:

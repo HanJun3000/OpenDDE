@@ -150,20 +150,10 @@ def _one_letter_code(res_name: str) -> Optional[str]:
     return code if code and len(code) == 1 else "X"
 
 
-def load_custom_template_chain(
-    structure_path: str, chain_id: Optional[str] = None
-) -> CustomTemplateChain:
-    """
-    Read the observed amino-acid residues of one chain from a PDB/mmCIF file.
-
-    Args:
-        structure_path: Path to a .cif/.mmcif/.pdb/.ent file, optionally gzipped.
-        chain_id: Author chain ID. May be omitted if the file has exactly one
-            protein chain.
-
-    Returns:
-        The chain's one-letter sequence (in file order) with atom37 coordinates.
-    """
+def _read_protein_residues(
+    structure_path: str,
+) -> Dict[str, Dict[tuple, Dict[str, Any]]]:
+    """Group the amino-acid atoms of a structure file by chain and residue."""
     if not os.path.isfile(structure_path):
         raise FileNotFoundError(f"Template structure not found: {structure_path}")
     text = _read_text(structure_path)
@@ -199,6 +189,29 @@ def load_custom_template_chain(
 
     if not residues:
         raise ValueError(f"No protein chains found in {structure_path}.")
+    return residues
+
+
+def list_protein_chains(structure_path: str) -> list[str]:
+    """Return the author IDs of the protein chains in a file, in file order."""
+    return list(_read_protein_residues(structure_path))
+
+
+def load_custom_template_chain(
+    structure_path: str, chain_id: Optional[str] = None
+) -> CustomTemplateChain:
+    """
+    Read the observed amino-acid residues of one chain from a PDB/mmCIF file.
+
+    Args:
+        structure_path: Path to a .cif/.mmcif/.pdb/.ent file, optionally gzipped.
+        chain_id: Author chain ID. May be omitted if the file has exactly one
+            protein chain.
+
+    Returns:
+        The chain's one-letter sequence (in file order) with atom37 coordinates.
+    """
+    residues = _read_protein_residues(structure_path)
     if chain_id is None:
         if len(residues) != 1:
             raise ValueError(
